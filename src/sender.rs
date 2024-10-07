@@ -1,21 +1,19 @@
+use super::packet_builder::build_packet;
+use super::settings::SendPacketSettings;
+use crossbeam_channel::{bounded, Receiver, SendError, Sender};
 use pcap::{Active, Capture};
+use rayon::prelude::*;
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 use std::thread;
-use crossbeam_channel::{bounded, Sender, Receiver, SendError};
-use rayon::prelude::*;
+use std::time::{Duration, Instant};
 
-use super::packet_builder::build_packet;
-use super::settings::{SendPacketSettings, SettingsLocator, SettingsPattern};
-
-const BATCH_SIZE: usize = 1000;
-const PROGRESS_INTERVAL: usize = 10000;
+const BATCH_SIZE: usize = 1; // 一度に送信するパケット数
+const PROGRESS_INTERVAL: usize = 100000; // 進捗表示間隔 10000 パケットごとに表示
 
 #[derive(Debug)]
 pub enum PacketSenderError {
-    SettingsNotFound,
     PacketBuildError,
     ChannelSendError,
     ChannelReceiveError,
@@ -31,15 +29,8 @@ impl fmt::Display for PacketSenderError {
 
 impl Error for PacketSenderError {}
 
-pub fn packet_sender(cap: &mut Capture<Active>, pattern: SettingsPattern) -> Result<(), PacketSenderError> {
-    let locator = SettingsLocator::new();
-    let settings = locator.get_settings(&pattern)
-        .ok_or_else(|| {
-            println!("設定が見つかりません");
-            PacketSenderError::SettingsNotFound
-        })?;
-
-    send_packets(cap, settings)
+pub fn packet_sender(cap: &mut Capture<Active>, settings: SendPacketSettings) -> Result<(), PacketSenderError> {
+    send_packets(cap, Arc::new(settings))
 }
 
 fn send_packets(
@@ -51,9 +42,10 @@ fn send_packets(
             println!("パケット構築エラー");
             PacketSenderError::PacketBuildError
         })?);
-    let (tx, rx): (Sender<Vec<Vec<u8>>>, Receiver<Vec<Vec<u8>>>) = bounded(100);
 
+    let (tx, rx): (Sender<Vec<Vec<u8>>>, Receiver<Vec<Vec<u8>>>) = bounded(100);
     let producer_settings = Arc::clone(&settings);
+
     let producer_thread = thread::spawn(move || -> Result<(), SendError<Vec<Vec<u8>>>> {
         (0..producer_settings.packet_count)
             .collect::<Vec<_>>()
@@ -68,6 +60,43 @@ fn send_packets(
     });
 
     println!("パケット送信を開始します...");
+    println!("送信設定: {{\n\
+    \tethernet_src_mac: {:?},\n\
+    \tethernet_dst_mac: {:?},\n\
+    \tipv4_src_ip: {:?},\n\
+    \tipv4_dst_ip: {:?},\n\
+    \tipv4_version: {:?},\n\
+    \tipv4_header_length: {:?},\n\
+    \tipv4_dscp: {:?},\n\
+    \tipv4_ecn: {:?},\n\
+    \tipv4_identification: {:?},\n\
+    \tipv4_next_level_protocol: {:?},\n\
+    \tipv4_flags: {:?},\n\
+    \ttcp_flags: {:?},\n\
+    \tsrc_port: {:?},\n\
+    \tdst_port: {:?},\n\
+    \ttimeout: {:?},\n\
+    \tpacket_count: {:?},\n\
+    \tinterval: {:?} \n\
+    }}",
+        settings.ethernet_src_mac,
+        settings.ethernet_dst_mac,
+        settings.ipv4_src_ip,
+        settings.ipv4_dst_ip,
+        settings.ipv4_version,
+        settings.ipv4_header_length,
+        settings.ipv4_dscp,
+        settings.ipv4_ecn,
+        settings.ipv4_identification,
+        settings.ipv4_next_level_protocol,
+        settings.ipv4_flags,
+        settings.tcp_flags,
+        settings.src_port,
+        settings.dst_port,
+        settings.timeout,
+        settings.packet_count,
+        settings.interval
+    );
     let start_time = Instant::now();
     let mut packets_sent = 0;
     let mut last_progress_time = Instant::now();
@@ -86,6 +115,8 @@ fn send_packets(
                     PacketSenderError::PacketSendError
                 })?;
             packets_sent += 1;
+            thread::sleep(settings.interval);
+            println!("パケット送信: {:?}", packets_sent);
 
             if packets_sent % PROGRESS_INTERVAL == 0 {
                 let now = Instant::now();
