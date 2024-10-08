@@ -18,7 +18,7 @@ fi
 
 # プロジェクトディレクトリに移動
 log "プロジェクトディレクトリに移動します..."
-cd ~/RustroverProjects/dos-attack-tool/ || { log "ディレクトリが見つかりません"; exit 1; }
+cd ~/RustroverProjects/parallel-dos-attack-tool/ || { log "ディレクトリが見つかりません"; exit 1; }
 
 # プロジェクトをビルド
 log "プロジェクトを${CORES}個のコアでビルドします..."
@@ -26,7 +26,7 @@ RUSTFLAGS="-C target-cpu=native" cargo build --release -j"${CORES}" || { log "�
 
 # 実行ファイルに権限を付与
 log "実行ファイルに権限を付与します..."
-sudo setcap cap_net_raw,cap_net_admin=eip target/release/dos-attack-tool
+sudo setcap cap_net_raw,cap_net_admin=eip target/release/parallel-dos-attack-tool
 
 log "アプリケーションを実行します..."
-sudo ./target/release/dos-attack-tool
+sudo ./target/release/parallel-dos-attack-tool

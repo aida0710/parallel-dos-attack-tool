@@ -1,4 +1,5 @@
-# Dos-Attack-Tool
+# Parallel Dos Attack Tool
 
+並列スレッドで動作する演習用DoS攻撃ツールです
 攻撃目的で使用しないでください。
 毎秒30万パケット程度を送信することが可能なツールです。
